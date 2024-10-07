@@ -1,0 +1,281 @@
+---
+title: "Lineage retention in gastruloids"
+author: "Cat Triandafillou"
+date: "2024-09-03"
+output:
+  html_document:
+    theme: united
+    toc: true
+    number_sections: false
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message=FALSE)
+
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(cat.extras)
+
+
+# Create a function to modify the existing theme
+modify_theme_with_avenir <- function(theme_ct_stresspH) {
+  theme_ct_stresspH() +
+    theme(
+      text = element_text(family = "Avenir"),
+      plot.title = element_text(family = "Avenir"),
+      axis.title = element_text(family = "Avenir"),
+      axis.text = element_text(family = "Avenir"),
+      legend.text = element_text(family = "Avenir")
+    )
+}
+
+# Create the modified theme
+avenir_theme <- modify_theme_with_avenir(theme_ct_stresspH)
+
+theme_set(avenir_theme)
+cdh1_purple = "#7D4D6C"
+
+`%!in%` = Negate(`%in%`)
+
+#save_dir <- "/Users/cat/RajLab Dropbox/Catherine Triandafillou/Shared_CatT/talks/2024-08-02_group-meeting/"
+#save_dir <- "/Users/cat/RajLab Dropbox/Catherine Triandafillou/Shared_CatT/talks/2024-09-16_dr-retreat/"
+```
+
+
+```{r aux.fxns}
+create_well_order <- function(wells) {
+  wells %>%
+    unique() %>%  # Remove duplicates for ordering
+    tibble(well = .) %>%
+    separate(well, into = c("row", "col"), sep = "(?<=[A-Za-z])(?=[0-9])", remove = FALSE) %>%
+    mutate(
+      row = factor(row, levels = LETTERS),
+      col = as.numeric(col)
+    ) %>%
+    arrange(row, col) %>%
+    pull(well) %>%
+    {factor(wells, levels = .)}  # Use original 'wells' to maintain all entries including duplicates
+}
+```
+
+
+```{r read.data}
+path_to_data = "/Users/triandafillou/RajLab Dropbox/Catherine Triandafillou/Shared_CatT/gastruloids/data/widefield-imaging/"
+#path_to_data = "/Users/cat/RajLab Dropbox/Catherine Triandafillou/Shared_CatT/gastruloids/data/widefield-imaging/"
+
+
+data <- fread(paste0(path_to_data,"2024-08-26_lineage-retention/2024-08-26_lineage-retention.csv"))
+data2 <- fread(paste0(path_to_data,"2024-09-01_lineage-retention/2024-09-01_lineage-retention.csv"))
+
+head(data)
+```
+
+# Wild type
+
+
+
+```{r}
+wtdf <- melt(select(data2,-colors, -morphology), id.vars = c("Well", "makeup", "date_of_aggregation"), variable.name = "time_fctr", value.name = "n_lineages") %>%
+  mutate(makeup = factor(makeup),
+         time_num = as.numeric(str_extract(time_fctr, "\\d+"))) %>%
+  mutate(Well = create_well_order(Well)) %>%
+  arrange(Well)
+  
+wtdf
+```
+
+## Delta number of lineages
+
+### From starting number of lineages
+
+
+```{r}
+wtdf3 <- wtdf %>%
+  arrange(Well, time_num) %>%
+  group_by(Well) %>%
+  mutate(lineage_delta0 = n_lineages - first(n_lineages)) %>%
+  ungroup()
+```
+
+
+```{r}
+ggplot(wtdf3, aes(x = lineage_delta0)) +
+  facet_grid(~time_fctr) +
+  geom_histogram(binwidth = 1, center = 1) +
+  labs(title = "Lineage difference from t=24",
+       x = expression(Delta ~ "number of lineages")) +
+  scale_x_continuous(breaks = c(-4, -3, -2, -1, 0, 1, 2, 3))
+```
+
+
+# Cdh1 knockdown
+
+# Number of lineages lost
+
+
+```{r}
+df <- melt(select(data,-colors), id.vars = c("Well", "makeup", "date_of_aggregation"), variable.name = "time_fctr", value.name = "n_lineages") %>%
+  mutate(makeup = factor(makeup),
+         time_num = as.numeric(str_extract(time_fctr, "\\d+"))) %>%
+  filter(grepl("Cdh1KD", makeup)) %>%
+  mutate(Well = create_well_order(Well)) %>%
+  arrange(Well)
+  
+df
+```
+
+```{r}
+ggplot(filter(df, grepl("Cdh1KD", makeup)), aes(x = time_num, y = n_lineages, group=Well)) +
+  #facet_wrap(~Well) +
+  #geom_step(alpha=0.05)
+  geom_jitter(width=1, height = 0.3) +
+  #geom_point() +
+  geom_line(alpha=0.1) +
+  scale_x_continuous(breaks = c(0, 24, 48, 72, 96)) +
+  scale_y_continuous(breaks = c(0, 1, 2, 3, 4, 5, 6, 7, 8))
+```
+```{r fig.width=15, fig.height=7}
+ggplot(df, aes(x = time_num, y = n_lineages, group=Well)) +
+  facet_wrap(~Well, nrow=8) +
+  #geom_line() +
+  geom_step() +
+  labs(x = "Time (hours)",
+       y = "Number of lineages") +
+  scale_x_continuous(breaks = c(0, 24, 48, 72, 96), limits = c(0,96)) +
+  theme(strip.text = element_blank(),
+        panel.spacing = unit(4, "mm"))
+```
+
+
+## $\Delta$ number of lineages over time
+
+### From previous timepoint
+
+```{r}
+df2 <- df %>%
+  arrange(Well, time_num) %>%
+  group_by(Well) %>%
+  mutate(lineage_delta = n_lineages - lag(n_lineages, default = first(n_lineages))) %>%
+  ungroup()
+```
+
+
+```{r}
+ggplot(df2, aes(x = lineage_delta)) +
+  facet_grid(~time_fctr) +
+  labs(title = "Lineage difference from previous timepoint",
+       x = expression(Delta ~ "number of lineages")) +
+  geom_histogram(binwidth = 1, center = 1) +
+  scale_x_continuous(breaks = c(-4, -3, -2, -1, 0, 1, 2, 3))
+```
+
+### From starting number of lineages
+
+```{r}
+df3 <- df %>%
+  arrange(Well, time_num) %>%
+  group_by(Well) %>%
+  mutate(lineage_delta0 = n_lineages - first(n_lineages)) %>%
+  ungroup()
+```
+
+
+```{r fig.width=15, fig.height=7}
+ggplot(df3, aes(x = time_num, y = lineage_delta0, group=Well)) +
+  facet_wrap(~Well, nrow=8) +
+  geom_line() +
+  scale_x_continuous(breaks = c(0, 24, 48, 72, 96)) +
+  labs(title = "Change in number of lineages",
+       x = "Time (hrs)",
+       y = "Change in # of lineages (from starting value)") +
+  theme(strip.text = element_blank(),
+        panel.spacing = unit(4, "mm"))
+```
+
+```{r}
+ggplot(df3, aes(x = lineage_delta0)) +
+  facet_grid(~time_fctr) +
+  geom_histogram(binwidth = 1, center = 1) +
+  labs(title = "Lineage difference from t=24",
+       x = expression(Delta ~ "number of lineages")) +
+  scale_x_continuous(breaks = c(-4, -3, -2, -1, 0, 1, 2, 3))
+```
+
+# Direct comparison
+
+```{r}
+to_plot_96_delta <- filter(df3, time_num == 96) %>%
+  bind_rows(filter(wtdf3, time_num == 96))
+
+genotype_labels = labeller(makeup = c("2p-Cdh1KD-rainbow_wt-bkg" = "Cdh1 knockdown", 
+                 "2p-wt-rainbow_wt-bkg" = "Wild type"))
+
+
+ggplot(to_plot_96_delta, aes(x = lineage_delta0, fill = makeup, color=makeup)) +
+  facet_wrap(~makeup, labeller = genotype_labels) +
+  geom_histogram(binwidth = 1, center = 1, position = 'identity', alpha = 0.25) +
+  labs(x = expression(Delta ~ "number of lineages")) +
+  scale_x_continuous(breaks = c(-4, -3, -2, -1, 0, 1, 2, 3)) +
+  theme(legend.position = "none")
+
+#ggsave(paste0(save_dir, "Lineage-loss-comparison.pdf"))
+```
+
+
+```{r}
+df4 <- df %>%
+  filter(grepl("Cdh1", makeup)) %>%
+  filter(time_fctr == "96_hrs") %>%
+  full_join(filter(wtdf, time_fctr == "96_hrs"))
+
+genotype_labels = labeller(makeup = c("2p-Cdh1KD-rainbow_wt-bkg" = "Cdh1 knockdown", 
+                 "2p-wt-rainbow_wt-bkg" = "Wild type"))
+```
+
+
+```{r}
+ggplot(filter(df4, !grepl("Cdh1", makeup)), aes(x = n_lineages)) +
+  facet_wrap(~makeup, labeller = genotype_labels) +
+  geom_histogram(binwidth = 1, center = 1, position = 'identity', fill = "gray80", color='black') +
+  labs(x = expression("Number of lineages remaining at 96 hours")) +
+  scale_x_continuous(breaks = c(0, 1, 2, 3, 4, 5), limits = c(NA,5.5)) +
+  theme(legend.position = "none")
+
+#ggsave(paste0(save_dir, "wt_n_lineages_96.png"), width = 4, height = 4, units = "in")
+```
+
+```{r}
+ggplot(filter(df4, grepl("Cdh1", makeup)), aes(x = n_lineages)) +
+  facet_wrap(~makeup, labeller = genotype_labels) +
+  geom_histogram(binwidth = 1, center = 1, position = 'identity', fill = cdh1_purple, color='black') +
+  labs(x = expression("Number of lineages remaining at 96 hours")) +
+  scale_x_continuous(breaks = c(0, 1, 2, 3, 4, 5), limits = c(NA,5.5)) +
+  theme(legend.position = "none")
+
+#ggsave(paste0(save_dir, "cdh1_n_lineages_96.png"), width = 4, height = 4, units = "in")
+```
+
+```{r}
+ggplot(filter(to_plot_96_delta, !grepl("Cdh1", makeup)), aes(x = lineage_delta0, fill = makeup, color=makeup)) +
+  facet_wrap(~makeup, labeller = genotype_labels) +
+  geom_histogram(binwidth = 1, center = 1, position = 'identity', fill = "gray80", color='black') +
+  labs(x = expression(Delta ~ "number of lineages")) +
+  scale_x_continuous(breaks = c(-4, -3, -2, -1, 0, 1), limits = c(-4.5, 1.5)) +
+  theme(legend.position = "none")
+
+#ggsave(paste0(save_dir, "wt_n_lineages_lost.png"), width = 4, height = 4, units = "in")
+```
+
+```{r}
+ggplot(filter(to_plot_96_delta, grepl("Cdh1", makeup)), aes(x = lineage_delta0, fill = makeup, color=makeup)) +
+  facet_wrap(~makeup, labeller = genotype_labels) +
+  geom_histogram(binwidth = 1, center = 1, position = 'identity', fill = cdh1_purple, color='black') +
+  labs(x = expression(Delta ~ "number of lineages")) +
+  scale_x_continuous(breaks = c(-4, -3, -2, -1, 0, 1), limits = c(-4.5, 1.5)) +
+  theme(legend.position = "none")
+
+#ggsave(paste0(save_dir, "cdh1_n_lineages_lost.png"), width = 4, height = 4, units = "in")
+```
+

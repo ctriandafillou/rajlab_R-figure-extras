@@ -1,0 +1,603 @@
+---
+title: "heatshock/pHi paper: Ionophore induction figure plots"
+author: Catherine Triandafillou
+date: March 05, 2019
+---
+
+# Main Figures
+
+```{r setup, message=FALSE, echo = FALSE, results="hide", warning = FALSE}
+
+library(data.table, quietly=TRUE)
+library(flowCore)
+library(reshape2)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(flownalysis)
+library(scales)
+library(zoo) # Needed for rolling mean calculation
+library(cat.extras)
+library(colormap)
+
+
+labels <- c(`hs`="42\u00b0 C, 20 min (heat shock)", `mock` = "30\u00b0 C, 20 min (mock)", `5p0` = "pH 5.0", `6p5` = "pH 6.5", `6p6` = "pH 6.6", `7p5` = "pH 7.5", `7p0` = "pH 7.0", `25` = "25 minutes", `30` = "30 minutes", `45` = "45 minutes", `65` = "65 minutes", `60` = "60 minutes", `90` = "90 minutes", `120` = "120 minutes recovery", `240` = "240 minutes", `mix` = "Mix", `spike` = "Spike-in", `180` = "180 minutes recovery", `210` = "210 minutes", `270` = "270 minutes", `300` = "300 minutes", `5` = "5 minutes", `20` = "20 minutes", `40` = "40 minutes", `100` = "100 minutes", `7p1` = "pH 7.1", `7p2` = "pH 7.2", `7p3` = "pH 7.3", `7p4` = "pH 7.4", `80` = "80 minutes", `150` = "150 minutes", `unshocked` = "30\u00b0C", `shocked` = "Recovery from 42\u00b0C 20 min heat shock")
+
+`%!in%` = Negate(`%in%`)
+theme_set(theme_ct_stresspH(base_size = 12))
+```
+
+
+```{r colors}
+####### color guide ######
+# | Color hex | shock pH |
+# |  #F8766D  |   5.0    |
+# |  #B49760  |   6.0    |
+# |  #7DB256  |   6.5    |
+# |  #83897F  |   6.8    |
+# |  #8b57b1  |   7.0    |
+# |  #8068C5  |   7.2    |
+# |  #7A72D1  |   7.3    |
+# |  #6E86E7  |   7.4    |
+# |  #629BFE  |   7.5    |
+# |  #800000  |  native  |
+
+#c("#F6776D", "#B49760", "#83897F", "#8b57b1", "#8068C5", "#7A72D1", "#629BFE")
+
+all.colors <- c(`5` = "#F6776D", `6` = "#B49760", `6.5` = "#7DB256", `6.8` = "#83897F", `7` = "#8b57b1", `7.2` =  "#8068C5", `7.3` = "#7A72D1", `7.4` = "#6E86E7", `7.5` = "#629BFE", `nat` = "#800000", `native` = "#800000")
+five.sixeight.sevenfour.subset <- c("#F6776D", "#83897F", "#6E86E7")
+
+pH.labels <- c(`5p0` = "5.0", `6p0` = "6.0", `6p5` = "6.5", `6p8` = "6.8", `7p0` = "7.0", `7p2` =  "7.2", `7p3` = "7.3", `7p4` = "7.4", `7p5` = "7.5", `nat` = "media", `native` = "media", `5` = "5.0", `6.5` = "6.5", `7.4` = "7.4", `6` = "6.0", `6.8` = "6.8", `7` = "7.0", `7.2` = "7.2", `7.3` = "7.3", `7.5` = "7.5")
+
+glucose.labels <- c(`0.percent` = "0% glucose", `2.percent` = "2% glucose", `10rt` = "10 minutes in 7.5 media", `30rt` = "30 minutes in 7.5 media")
+
+g.m.colors = c(`4p0` = "#f2b238ff", `6p0` = "#f2b238ff", `7p5` = "#0c3383ff", `7p4` = "#0c3383ff", `0.percent` = "grey50", `2.percent` = "black")
+
+g.m.labels = c(`4p0` = "acidic media\nduring stress", `6p0` = "acidic media\nduring stress", `7p5` = "basic media\nduring stress", `7p4` = "basic media\nduring stress", `0.percent` = "glucose withdrawal during stress", `2.percent` = "2% glucose during stress", `0.percent.maltose` = "maltose withdrawal before stress", `2.percent.maltose` = "2% maltose during stress")
+
+new.color.map <- c(colormap(colormap = "portland", nshades = 9, reverse = TRUE), "#800000")
+names(new.color.map) <- c("5", "6", "6.5", "6.8", "7", "7.2", "7.3", "7.4", "7.5", "nat")
+```
+
+
+
+```{r read.data, echo=FALSE}
+#ionophore data
+ionophore.data <- fread(input = 'zcat < ~/Dropbox\\ \\(Drummond\\ Lab\\)/cat/pH-induction-paper/data/all_ionophore_data.csv.gz', na.strings = c("NA", ",,"))
+
+#other ionophore data
+neutral.ionophore.data <- fread(input = "zcat < ~/Dropbox\\ \\(Drummond\\ Lab\\)/cat/pH-induction-paper/data/neutral_ionophore_data.csv.gz") %>% filter(date != "oct09")
+
+#native data
+native.data <- fread(input = "zcat < ~/Dropbox\\ \\(Drummond\\ Lab\\)/cat/pH-induction-paper/data/no_==ionophore_data.csv.gz") %>% mutate(shock.pH = "native")
+jul29.native <- fread("../data/17-07-29_native_ind.csv") %>% mutate(date = "jul29")
+
+#ionophore qc data
+ionophore.qc.all <- fread("../data/ionophore-qc-data.tsv", na.strings = c("NA", ",,"))
+
+#buffered sc recovery
+buffered.sc.recovery <- fread(input = "zcat < ~/Dropbox\\ \\(Drummond\\ Lab\\)/cat/pH-induction-paper/data/buffered-sc-recovery.csv.gz")
+```
+
+
+
+```{r induction.data}
+# ionophore induction
+ionophore.induction.summary <- filter(ionophore.data, population == "pH" & shock.pH != "native" & shock.pH != "nativemock" & shock.pH != "6p8noionophore") %>%
+  rename("fit" = sample) %>%
+  bind_rows(., filter(neutral.ionophore.data, population == "pH")) %>%
+  mutate(shock.pH.num = round(as.numeric(gsub("p", ".", shock.pH)), digits = 1)) %>%
+  select(timepoint, treatment, shock.pH, rel.red, pH.m, date, fit, replicate, shock.pH.num) %>%
+  group_by(date, timepoint, treatment, shock.pH.num, fit, replicate) %>%
+  summarise(med.red = median(rel.red, na.rm = T),
+            med.pH = median(pH.m, na.rm = T)) %>%
+  ungroup() %>%
+  unite(id, date, fit, replicate) %>%
+  mutate(shock.pH.f = factor(shock.pH.num))
+
+```
+
+## Ionophore effect
+
+```{r ionophore.effect}
+# Comparison between average native induction and average 6.8 ionophore induction
+native.induction.reps <- filter(native.data, population == "pH" & treatment != "mock" & date != "mar07") %>% # all data from that day is an outlier
+  select(fitness, timepoint, date, rel.red, replicate) %>%
+  unite(id, fitness, date, replicate) %>%
+  group_by(id, timepoint) %>%
+  summarise(med.red = median(rel.red)) %>%
+  mutate(shock.pH = "native",
+         shock.pH.f = factor(shock.pH, levels = c("5p0", "7p4", "6p8", "6p8noionophore", "native"))) %>%
+  select(-shock.pH)
+
+native.comp.subset <- c("6p8", "6p8noionophore", "native")
+
+six.eight <- filter(ionophore.induction.summary,
+                    shock.pH.num == 6.8 & timepoint < 200 & treatment == "hs" & !grepl("NA", id))
+
+
+time.delay <- ggplot(six.eight, aes(x = timepoint, y = med.red, color = shock.pH.f)) +
+  geom_point(size = 1, color = "grey50", alpha = 0.5) +
+  geom_line(aes(group = id), size = 0.5, color = "grey50", alpha = 0.5) +
+  geom_smooth(se = FALSE) +
+  geom_smooth(data = native.induction.reps, se = F) +
+  scale_y_log10nice() +
+  scale_x_continuous(limits = c(0, NA)) +
+  scale_color_manual(name = "Stress", values = all.colors, labels = c("+ion.", "-ion.")) +
+  labs(x = "Recovery time (min)",
+       y = "Ssa4 fold change") +
+  theme(legend.key.height = unit(3, "mm"),
+        legend.text = element_text(size = 9),
+        axis.title = element_text(size = 10),
+        #legend.direction = "horizontal",
+        legend.title = element_blank(),
+        legend.margin = margin(0,0,0,0, unit = "mm"),
+        legend.position = c(0.22, 0.85))
+
+time.delay
+
+#ggsave("figures/figure3/plot-ionophore-effect.pdf", width = 65, height = 60, unit = "mm")
+#ggsave("figures/supplemental/sfigure_ii/plot-time-delay.pdf", width = 55, height = 50, unit = "mm")
+```
+
+
+```{r ionophore.effect.remix, message=FALSE}
+ggplot(six.eight, aes(x = timepoint, y = med.red, color = shock.pH.f)) +
+  geom_point(size = 1, color = "#f2b238ff", alpha = 0.5) +
+  geom_line(aes(group = id), size = 0.5, color = "#f2b238ff", alpha = 0.5) +
+  geom_smooth(se = FALSE, color = "#f2b238ff") +
+  geom_smooth(data = native.induction.reps, se = F, color = "grey40") +
+  scale_y_log10nice() +
+  scale_x_continuous(limits = c(0, NA)) +
+  labs(x = "Recovery time (min)",
+       y = "Ssa4 fold change") +
+  theme(legend.key.height = unit(3, "mm"),
+        legend.text = element_text(size = 9),
+        axis.title = element_text(size = 10),
+        legend.direction = "horizontal",
+        legend.margin = margin(0,0,0,0, unit = "mm"),
+        legend.position = "top")
+
+#ggsave("figures/figure3/plot-ionophore-effect_alt-colors.pdf", width = 55, height = 48, unit = "mm")
+```
+
+## Ionophore efficacy
+
+```{r ionophore.efficacy, fig.width=2, fig.height=3}
+ionophore.qc <- filter(ionophore.qc.all, timepoint != "controls") %>%
+  mutate(buffer.pH = factor(buffer.pH, levels = c("5p00", "6p80", "7p18", "7p49")))
+reference.dist <- filter(ionophore.qc.all, timepoint == "controls") %>%
+  select(-buffer.pH)
+qc.labels = c(`5p00` = "pH 5.0", `6p80` = "pH 6.8", `7p18` = "pH 7.2", `7p49` = "pH 7.5")
+
+ggplot(ionophore.qc, aes(x = pH.m, color = timepoint)) +
+  theme_ct_stresspH(base_size = 10) +
+  #facet_grid(buffer.pH~., labeller = as_labeller(qc.labels)) +
+  coord_flip() +
+  facet_grid(~buffer.pH, labeller = as_labeller(qc.labels)) +
+  #facet_wrap(~buffer.pH, labeller = as_labeller(qc.labels)) +
+  geom_density(size = 1) +
+  geom_vline(aes(xintercept = buffer.pH.num), linetype = 3, size = 0.5) +
+  geom_density(data = reference.dist, aes(x = pH.m), inherit.aes = F) +
+  scale_y_continuous(breaks = c(0, 2)) +
+  scale_color_brewer(palette = "Dark2", breaks = c("equilib", "midstress", "poststress"), labels = c("Equilibrated", "Mid-stress", "Post-stress")) +
+  labs(x = "Intracellular pH",
+       y = "Density") +
+  theme(legend.position = "none",
+        axis.text = element_text(size = 10),
+        #panel.spacing.y = unit(2, "mm"),
+        strip.text = element_text(size = 8))
+
+#ggsave("figures/figure3/plot-ionophore-qc.pdf", width = 55, height = 55, units = "mm")
+```
+
+## Induction: 4.0 recovery
+
+```{r sigmoid.fitting}
+new.singular <- c(7.1, 7.3)
+
+test.sigmoid.3 = filter(ionophore.induction.summary,
+                        treatment == "hs" & !(shock.pH.num %in% new.singular) & timepoint < 230) %>%
+  group_by(treatment, shock.pH.num) %>%
+  mutate(med.red = log10(med.red))
+
+test.sigmoid.3.fits <- test.sigmoid.3 %>%
+  do(fit_induction_sigmoid_base(., start.list = c(a=1.8, b=0.03, c=120), pr.params = T, constrain.base = T))
+
+test.sigmoid.3.params <- test.sigmoid.3 %>%
+  do(fit_induction_sigmoid_base(., start.list = c(a=1.8, b=0.03, c=120), constrain.base = T, return.params = TRUE))
+
+to.plot <- test.sigmoid.3 %>%
+  mutate(med.red = 10^med.red)
+
+to.plot.fits = test.sigmoid.3.fits %>%
+  mutate(med.red = 10^med.red)
+
+singulars <- filter(ionophore.induction.summary,
+                    treatment == "hs" & 
+                      #shock.pH.num %in% new.singular & 
+                      shock.pH.num == 7.3 &
+                      timepoint < 230) %>%
+  group_by(treatment, shock.pH.num) %>%
+  mutate(med.red = log10(med.red))
+
+singulars.fits <- singulars %>%
+  do(fit_induction_sigmoid_base(., start.list = c(a=1.8, b=0.03, c=130), pr.params = T, xmax = 150, constrain.base = T))
+
+singulars.params <- singulars %>%
+  do(fit_induction_sigmoid_base(., start.list = c(a=1.8, b=0.03, c=130), xmax = 150, constrain.base = T, return.params = TRUE))
+
+to.plot.f <- singulars %>%
+  mutate(med.red = 10^med.red) %>%
+  bind_rows(., to.plot)
+
+to.plot.fits.f <- singulars.fits %>%
+  mutate(med.red = 10^med.red) %>%
+  bind_rows(., to.plot.fits)
+
+params.f <- bind_rows(test.sigmoid.3.params, singulars.params)
+min.ind <- min(params.f$c)
+params.f <- mutate(params.f, delta = c - min.ind)
+```
+
+
+
+```{r all.induction.plot}
+highlights <- c(7.5, 6.8, 5.0)
+
+ggplot(to.plot.f, aes(x = timepoint, y = med.red, color = shock.pH.f)) +
+  #geom_vline(xintercept = 120, color = "grey", size = 5, alpha = 0.25) +
+  annotate(geom="rect", xmin = -Inf, xmax = Inf, ymin = 12, ymax = 20, fill = "grey", alpha = 0.33) +
+  geom_point(size = 0.8, alpha = 0.5) +
+  geom_line(data = filter(to.plot.fits.f, shock.pH.num %!in% highlights), size = 0.5, lineend = "round") +
+  geom_line(data = filter(to.plot.fits.f, shock.pH.num %in% highlights), size = 1.5, lineend = "round") +
+  scale_x_continuous(limits = c(0, 180)) +
+  scale_y_log10nice(limits = c(10^0, 10^2.25)) +
+  scale_colour_manual(name = "pH during\nstress", values = new.color.map, labels = pH.labels) +
+  labs(x = "Recovery time (min)",
+       y = "Ssa4 fold change") +
+  theme(legend.key.height = unit(3.5, "mm"),
+        legend.position = c(0.15,0.60),
+        legend.title = element_text(size = 10)) +
+  guides(color = guide_legend(reverse = T))
+
+#ggsave("figures/figure3/plot-induction-sigmoids.pdf", width = 80, height = 70, units = "mm")
+```
+
+```{r}
+ggplot(to.plot.f, aes(x = timepoint, y = med.red, color = shock.pH.f)) +
+  #geom_vline(xintercept = 120, color = "grey", size = 5, alpha = 0.25) +
+  #annotate(geom="rect", xmin = -Inf, xmax = Inf, ymin = 12, ymax = 20, fill = "grey", alpha = 0.33) +
+  geom_point(size = 0.8, alpha = 0.5) +
+  geom_line(data = filter(to.plot.fits.f, shock.pH.num %!in% highlights), size = 0.5, lineend = "round") +
+  geom_line(data = filter(to.plot.fits.f, shock.pH.num %in% highlights), size = 1.5, lineend = "round") +
+  scale_x_continuous(limits = c(0, 180)) +
+  scale_y_log10nice(limits = c(10^0, 10^2.25)) +
+  scale_colour_manual(name = "pH during\nstress", values = new.color.map, labels = pH.labels) +
+  labs(x = "Recovery time (min)",
+       y = "Ssa4 fold change") +
+  theme(legend.key.height = unit(3.5, "mm"),
+        legend.title = element_text(size = 10)) +
+  guides(color = guide_legend(reverse = T))
+
+#ggsave("figures/figure3/plot-induction-sigmoids_outside-legend.pdf", width = 90, height = 65, units = "mm")
+```
+
+
+
+
+
+## Induction: 7.5 recovery
+
+
+```{r}
+# Recovery in buffered SC
+buffered.sc.summary <- buffered.sc.recovery %>%
+  group_by(timepoint, treatment, shock.pH, shock.pH.f, replicate, population, date) %>%
+  summarise(med.pH = median(pH.m, na.rm = T),
+            med.red = median(rel.red, na.rm = T))
+
+
+buffered.fits <- filter(buffered.sc.summary, treatment == "hs" & population == "pH") %>%
+  group_by(shock.pH.f, shock.pH) %>%
+  mutate(med.red = log10(med.red)) %>%
+  do(fit_induction_sigmoid_base(., start.list = c(a=1.8, b=0.03, c=120), xmax = 210, constrain.base = T)) # fitting with constrained baseline > 1
+#do(fit_induction_sigmoid_base(., start.list = c(a=1.8, b=0.03, c=120), pr.params = T, xmax = 210)) # fitting with baseline fixed at 1
+```
+
+
+```{r}
+ggplot(filter(buffered.sc.summary, treatment == "hs" & population == "pH"), aes(x = timepoint, y = med.red, color = shock.pH.f)) +
+  #geom_vline(xintercept = 120, color = "grey", size = 5, alpha = 0.25) +
+  geom_point(size = 0.8, alpha = 0.5) +
+  scale_color_manual(values = new.color.map, name = "pH during\nstress", labels = pH.labels) +
+  geom_line(data = buffered.fits, aes(x = timepoint, y = 10^med.red), size = 1.5, lineend = "round") +
+  labs(x = "Recovery time (min)",
+       y = "Ssa4 fold change") +
+  scale_x_continuous(limits = c(0, 210)) +
+  scale_y_log10nice(limits = c(10**0, 10^2.25)) +
+  theme(#legend.key.height = unit(3.5, "mm"),
+        #legend.position = c(0.22,0.68),
+        legend.position = "none",
+        #legend.title = element_text(size = 10),
+        axis.title.x = element_text(size=12))
+
+ggsave("figures/figure3/plot-induction-buffsc_nolegend.pdf", width = 70, height = 65, units = "mm")
+```
+
+
+## Ionophore only
+
+
+```{r 120.points.ionophore}
+ionophore.only.data <- filter(ionophore.induction.summary, timepoint == 120 & shock.pH.num != 7.1 & treatment == "mock") %>%
+  data.frame()
+
+ggplot(ionophore.only.data, aes(x = shock.pH.num, fill = shock.pH.f, y = med.red)) +
+  geom_point(color = "black", shape = 21, size = 2) +
+  scale_fill_manual(values = new.color.map) +
+  facet_grid(timepoint~treatment, labeller = as_labeller(c(`hs` = "ionophore + heat", `mock` = "ionophore only"))) +
+  labs(x = "Intracellular pH",
+       y = "Ssa4 fold change") +
+  #scale_y_log10nice(limits = c(10^0, 10^2.25)) +
+  scale_y_continuous(limits = c(1, 65)) +
+  theme(legend.position = "none",
+        panel.spacing.x = unit(6, "mm"),
+        strip.text = element_text(size = 10),
+        strip.text.y = element_blank(),
+        axis.title = element_text(size=10))
+
+#ggsave("figures/figure3/plot-ionophore-only-points.pdf", width = 55, height = 55, units = "mm")
+```
+
+
+
+## Time delay plot
+
+
+```{r fig.width=2.7, fig.height=2.5}
+time.delay.data = filter(ionophore.induction.summary, med.red > 10 & med.red < 20 & treatment == "hs")
+
+ggplot(time.delay.data, aes(x = shock.pH.num, y = timepoint, color = shock.pH.f)) +
+  geom_point() +
+  scale_colour_manual(values = new.color.map) +
+  labs(x = "pH during stress",
+       y = "Time to 10-fold\ninduction (minutes)") +
+  theme(legend.position = "none",
+        axis.title = element_text(size=10))
+
+#ggsave("figures/figure3/plot-time-delay.pdf", height = 60, width = 70, units = "mm")
+```
+
+
+```{r fig.width=2.7, fig.height=2.5}
+time.delay.model.ref <- filter(to.plot.fits.f, (med.red > 9.9 & med.red < 10.2) & shock.pH.num == 6.5) %>%
+  ungroup() %>%
+  select(timepoint) %>%
+  as.numeric()
+
+time.delay.model.data <- filter(to.plot.fits.f, med.red > 9.9 & med.red < 10.2) %>%
+  mutate(delta = timepoint - time.delay.model.ref)
+  
+
+ggplot(time.delay.model.data, aes(x = shock.pH.num, y = delta, color = shock.pH.f)) +
+  geom_point(size=2.5) +
+  scale_colour_manual(values = new.color.map) +
+  labs(x = "pH during stress",
+       y = "Difference in fit midpoint") +
+  theme(legend.position = "none",
+        axis.title.y = element_text(size=10))
+
+ggsave("figures/figure3/plot-time-delay-model.pdf", height = 65, width = 70, units = "mm")
+```
+
+
+```{r fig.width=2.7, fig.height=2.5}
+# Also trying with the model parameter midpoint here, and with error on fit
+
+ggplot(params.f, aes(x = shock.pH.num, y = c, color = shock.pH.f)) +
+  geom_point(size=2) +
+  scale_colour_manual(values = new.color.map) +
+  labs(x = "pH during stress",
+       y = "Model fit midpoint (min)") +
+  theme(legend.position = "none",
+        axis.title = element_text(size=10))
+
+ggplot(params.f, aes(x = shock.pH.num, y = delta, color = shock.pH.f)) +
+  geom_point(size=2) +
+  scale_colour_manual(values = new.color.map) +
+  labs(x = "pH during stress",
+       y = "Time delay (min, from model)") +
+  theme(legend.position = "none",
+        axis.title = element_text(size=10))
+```
+
+
+
+
+## Analogous media stress
+
+
+Secondary acidification is possible under these conditions.
+
+```{r}
+raw.jun1 <- read.chicago.flowSet("Triandafillou_19-06-01/", instrument = "HTS")
+
+jun1.4p0.bkg <- generate.red.bkg(raw.jun1, media = "sc")
+jun1.7p5.bkg <- generate.red.bkg(raw.jun1, media = "buffered.sc")
+```
+
+
+```{r process.june1.data, warning=FALSE}
+jun1.processed <- filter(raw.jun1, !grepl("controls", exp)) %>%
+  separate(exp, c("timepoint", "treatment", "shock.pH", "glucose", "replicate"), extra = "drop", convert = TRUE) %>%
+  mutate(population = ifelse(BV421.A < 1.1*FITC.A - 100, "pH", "bv"),
+         rel.red = (PEDazzle.A / FSC.A) / jun1.4p0.bkg,
+         pH.ratio = BV510.A / FITC.A,
+         glucose = case_when(glucose == "pglu" ~ "2.percent",
+                             glucose == "mglu" ~ "0.percent"))
+
+jun1.processed.summary <- group_by(jun1.processed, treatment, glucose, shock.pH, replicate, timepoint, population) %>%
+  summarise(med.red = median(rel.red, na.rm = TRUE),
+            med.pH.ratio = median(pH.ratio, na.rm = TRUE)) %>%
+  mutate(shock.pH.num = as.numeric(gsub("p", ".", shock.pH)),
+         shock.pH.f = factor(shock.pH.num),
+         recovery = "4p0") %>%
+  filter(population == "pH") %>%
+  ungroup()
+
+
+jun1.fits <- filter(jun1.processed.summary, treatment == "hs" & population == "pH") %>%
+  group_by(glucose, shock.pH.f, shock.pH.num, shock.pH) %>%
+  mutate(med.red = log10(med.red)) %>%
+  do(fit_induction_sigmoid_base(., constrain.base = TRUE, pr.params = TRUE))
+
+jun1.fits.to.plot <- jun1.fits %>%
+  mutate(med.red = 10^med.red)
+```
+
+
+
+```{r fig.width=4, fig.height=3}
+ggplot(filter(jun1.processed.summary, treatment == "hs" & glucose == "0.percent"), aes(x = timepoint, y = med.red, color = shock.pH)) +
+  geom_point(size = 0.8, alpha = 0.5) +
+  geom_line(data = filter(jun1.fits.to.plot, glucose == "0.percent"), aes(x = timepoint, y = med.red), size = 1, lineend = "round") +
+  scale_y_log10nice(limits = c(0.9, 200)) +
+  scale_x_continuous(limits = c(0, NA)) +
+  scale_color_manual(values = g.m.colors, labels = c(`4p0` = "4.0", `7p5` = "7.5"), name = "Media pH\nduring\nstress") +
+  labs(x = "Recovery time (minutes)",
+       y = "Ssa4 fold change") +
+  theme(#legend.position = c(0.72, 0.2),
+        #legend.title = element_blank(),
+        #axis.text = element_text(size=10),
+        legend.title = element_text(size=10))
+
+
+ggsave("figures/figure3/plot-media-acidic-recovery.pdf", width = 90, height = 65, units = "mm")
+```
+
+
+
+
+# Supplemental Figures
+
+
+## 2 hrs summary
+
+```{r 120.points.supp}
+points.plot <- filter(ionophore.induction.summary, timepoint == 120 & shock.pH.num != 7.1) %>%
+  data.frame()
+
+ggplot(points.plot, aes(x = shock.pH.num, fill = shock.pH.f, y = med.red)) +
+  geom_point(color = "black", shape = 21, size = 2) +
+  scale_fill_manual(values = new.color.map) +
+  facet_grid(timepoint~treatment, labeller = as_labeller(c(`hs` = "ionophore + heat", `mock` = "ionophore only"))) +
+  labs(x = "pH during stress or treatment",
+       y = "Ssa4 fold change") +
+  #scale_y_log10nice(limits = c(10^0, 10^2.25)) +
+  theme(legend.position = "none",
+        panel.spacing.x = unit(6, "mm"),
+        strip.text = element_text(size = 10),
+        strip.text.y = element_blank())
+
+ggsave("figures/supplemental/sfigure_ii/plot-ii_120-points.pdf", width = 145, height = 75, units = "mm")
+#fwrite(points.plot, file = "20180710_induction-v-pH.tsv", sep = '\t')
+```
+
+
+
+## Twitter figure
+
+```{r}
+ggplot(filter(buffered.sc.summary, treatment == "hs" & population == "pH" & shock.pH != "5p0"), aes(x = timepoint, y = med.red, color = shock.pH.f)) +
+  #geom_vline(xintercept = 120, color = "grey", size = 5, alpha = 0.25) +
+  geom_point(size = 0.8, alpha = 0.5) +
+  scale_color_manual(values = new.color.map, name = "pH during\nstress", labels = pH.labels) +
+  geom_line(data = filter(buffered.fits, shock.pH != "5p0"), aes(x = timepoint, y = 10^med.red), size = 1.5, lineend = "round") +
+  labs(x = "Time after stress (min)",
+       y = "Heat\nshock\nprotein\ninduction\nrelative to\nuntreated") +
+  scale_x_continuous(limits = c(0, 210)) +
+  #scale_y_log10nice(limits = c(NA, 10^2.25)) +
+  scale_y_log10(limits = c(NA,10^2.25)) +
+  theme(legend.key.height = unit(4, "mm"),
+        legend.position = c(0.13,0.81),
+        legend.title = element_text(size = 12),
+        axis.title.y = element_text(angle = 0, vjust = 0.5, size = 14),
+        legend.text = element_text(size = 12))
+
+#ggsave("twitter-figs/induction.pdf", dpi=200, width = 140, height = 80, units = "mm")
+```
+
+
+
+```{r buffsc.talk.figure.builds}
+builds <- list(c("6p8"), c("6p8", "5p0"), c("6p8", "5p0", "7p5"))
+
+for(i in 1:length(builds)) {
+  current.build = builds[[i]]
+  
+  b.data = filter(buffered.sc.summary, treatment == "hs" & population == "pH" & shock.pH %in% current.build)
+  b.fits = filter(buffered.fits, shock.pH %in% current.build)
+
+  ggplot(b.data, aes(x = timepoint, y = med.red, color = shock.pH.f)) +
+    geom_point(size = 0.8, alpha = 0.5) +
+    scale_color_manual(values = new.color.map, name = "pH during\nstress", labels = pH.labels) +
+    geom_line(data = b.fits, aes(x = timepoint, y = 10^med.red), size = 1.5, lineend = "round") +
+    labs(x = "Recovery time (min)",
+         y = "Ssa4 fold change") +
+    scale_x_continuous(limits = c(0, 210)) +
+    scale_y_log10nice(limits = c(10^0, 10^2.25)) +
+    theme(legend.key.height = unit(3.5, "mm"),
+          legend.title = element_text(size = 10))
+
+  ggsave(paste0("~/Dropbox (Drummond Lab)/cat/figures/18-09-17_scitalk-class/figure-ii_induction_buffsc", i, ".pdf"), width = 4.5, height = 3)
+
+}
+```
+
+
+```{r acidisc.talk.figure.builds}
+# ggplot(to.plot.f, aes(x = timepoint, y = med.red, color = shock.pH.f)) +
+# #ggplot(filter(to.plot.f, shock.pH.num %in% highlights), aes(x = timepoint, y = med.red, color = shock.pH.f)) +
+#   geom_vline(xintercept = 120, color = "grey", size = 5, alpha = 0.25) +
+#   geom_point(size = 0.8, alpha = 0.5) +
+#   geom_line(data = filter(to.plot.fits.f, shock.pH.num %!in% highlights), size = 0.5, lineend = "round") +
+#   geom_line(data = filter(to.plot.fits.f, shock.pH.num %in% highlights), size = 1.5, lineend = "round") +
+#   scale_x_continuous(limits = c(0, 180)) +
+#   scale_y_log10nice(limits = c(10^0, 10^2.25)) +
+#   scale_colour_manual(name = "pH during\nstress", values = new.color.map, labels = pH.labels) +
+#   labs(x = "Recovery time (min)",
+#        y = "Ssa4 fold change") +
+#   theme(legend.key.height = unit(3.5, "mm"),
+#         legend.position = c(0.13,0.64),
+#         legend.title = element_text(size = 10)) +
+#   guides(color = guide_legend(reverse = T))
+
+builds <- list(c(6.8), c(6.8, 5.0), c(6.8, 5.0, 7.5))
+
+for(i in 1:length(builds)) {
+  current.build = builds[[i]]
+  
+  b.data = filter(to.plot.f, treatment == "hs" & shock.pH.num %in% current.build)
+  b.fits = filter(to.plot.fits.f, shock.pH.num %in% current.build)
+  
+  ggplot(b.data, aes(x = timepoint, y = med.red, color = shock.pH.f)) +
+#ggplot(filter(to.plot.f, shock.pH.num %in% highlights), aes(x = timepoint, y = med.red, color = shock.pH.f)) +
+  #geom_vline(xintercept = 120, color = "grey", size = 5, alpha = 0.25) +
+  geom_point(size = 0.8, alpha = 0.5) +
+  geom_line(data = b.fits, size = 1.5, lineend = "round") +
+  scale_x_continuous(limits = c(0, 180)) +
+  scale_y_log10nice(limits = c(10^0, 10^2.25)) +
+  scale_colour_manual(name = "pH during\nstress", values = new.color.map, labels = pH.labels) +
+  labs(x = "Recovery time (min)",
+       y = "Ssa4 fold change") +
+  theme(legend.key.height = unit(3.5, "mm"),
+        legend.title = element_text(size = 10)) +
+  guides(color = guide_legend(reverse = T))
+
+  ggsave(paste0("~/Dropbox (Drummond Lab)/cat/figures/18-11-28_raj-lab/figure-ii_induction_acidsc", i, ".pdf"), width = 4.5, height = 3)
+
+}
+```
+
+

@@ -1,0 +1,115 @@
+---
+title: "Gastruloid Proportion Correct Summary"
+author: "Cat Triandafillou"
+date: "2024-09-06"
+output:
+  html_document:
+    theme: united
+    toc: true
+    number_sections: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(cat.extras)
+
+theme_set(theme_ct_stresspH())
+cdh1_purple = "#7D4D6C"
+
+`%!in%` = Negate(`%in%`)
+
+#save_dir <- "/Users/cat/RajLab Dropbox/Catherine Triandafillou/Shared_CatT/talks/2024-09-16_dr-retreat/"
+```
+
+
+```{r}
+#data <- read.csv("/Users/cat/RajLab Dropbox/Catherine Triandafillou/Shared_CatT/gastruloids/data/incucyte/2024-09-06_pcorr-summary.csv")
+data <- read.csv("/Users/triandafillou/RajLab Dropbox/Catherine Triandafillou/Shared_CatT/gastruloids/data/incucyte/2024-09-06_pcorr-summary.csv")
+
+#head(data)
+```
+
+
+
+```{r fig.width=8, fig.height=3}
+ggplot(filter(data, Genotype %in% c('wild type', 'Spatial Barcodes', 'AAVS1.2')), aes(x = Percent_dopant, y = Proportion_Correct, color = Rainbow)) +
+  facet_wrap(~Genotype) +
+  geom_point() +
+  #geom_jitter(size=2, width = 0.1) +
+  ylim(-0.01,1) +
+  xlab('Percent of gastruloid not wild type') +
+  geom_hline(yintercept = 0.75, linetype=2) +
+  scale_color_manual(values=c('gray40', 'magenta'))
+  labs(title='Wild type and equivalent cell lines')
+
+#ggsave(paste0(save_dir,"wt_pcorr.pdf"))
+#ggsave(paste0(save_dir,"wt_pcorr.png"))
+```
+
+```{r fig.width=8, fig.height=4}
+ggplot(filter(data, Genotype %!in% c('wild type', 'Spatial Barcodes', 'AAVS1.2')), aes(x = Percent_dopant, y = Proportion_Correct, color = Rainbow)) +
+  facet_wrap(~Genotype) +
+  geom_jitter(size=2, width = 0.1) +
+  ylim(-0.01,1) +
+  xlab('Percent of gastruloid') +
+  geom_hline(yintercept = 0.75, linetype=2) +
+  scale_color_manual(values=c('gray40', 'magenta')) +
+  labs(title='Knockout cell lines')
+
+#ggsave(paste0(save_dir,"kd_pcorr.pdf"))
+#ggsave(paste0(save_dir,"kd_pcorr.png"))
+```
+
+
+## Cdh1 knockdown plots
+
+
+
+
+```{r}
+average_p_correct = filter(data, Genotype == "wild type") %>%
+  summarise(med = median(Proportion_Correct)) %>%
+  as.numeric()
+
+ggplot(filter(data, Genotype %in% c('wild type', 'Cdh1')), aes(x = Percent_dopant, y = Proportion_Correct)) +
+  geom_jitter(size=3, width = 0.1, alpha = 0.75, color='darkgreen') +
+  ylim(-0.01,1) +
+  xlab('Percent of starting cells that are Cdh1 knockdown') +
+  ylab("Proportion correct (per plate)") +
+  geom_hline(yintercept = average_p_correct, linetype=2)
+
+#ggsave(paste0(save_dir,"cdh-pcorr.pdf"), width = 5, height = 3, units = "in")
+```
+
+```{r}
+#data2 <- read.csv("/Users/cat/RajLab Dropbox/Catherine Triandafillou/Shared_CatT/gastruloids/data/incucyte/2024-09-06_pcorr-summary2.csv")
+data2 <- read.csv("/Users/triandafillou/RajLab Dropbox/Catherine Triandafillou/Shared_CatT/gastruloids/data/incucyte/2024-09-06_pcorr-summary2.csv")
+```
+
+
+
+```{r}
+to_plot = filter(data2, Dopant_Genotype %in% c('Cdh1') | Percent_dopant == 0)
+
+to_plot_sum <- to_plot %>%
+  group_by(Percent_dopant) %>%
+  summarise(mean_prop = mean(Proportion_Correct))
+```
+
+
+
+```{r}
+ggplot(to_plot_sum, aes(x = factor(Percent_dopant), y = mean_prop)) +
+  geom_bar(stat = 'identity', fill = cdh1_purple, color = 'black', linewidth=1, alpha = 0.75) +
+  geom_jitter(data=to_plot, aes(x = factor(Percent_dopant), y = Proportion_Correct), width = 0.1, size=3, shape=21, fill=cdh1_purple, stroke=1) +
+  labs(x = "Starting percent Cdh1 knockdown cells",
+       y = "Proportion correct (per plate)")
+
+#ggsave(paste0(save_dir,"cdh-pcorr.pdf"), width = 6, height = 4, units = "in")
+```
+
